@@ -10,41 +10,51 @@ from sklearn import svm
 import librosa
 
 def main():
-    audpath="audiofiles/American_4_A_3NamingTask.wav"
-    tgpath="audiofiles/eaf/American_4_Naming_Joyce.TextGrid" 
-    full_tg=get_textgrid(tgpath)
-    right_tier=get_individual_tier(full_tg,"Speech (A)")
-    
-    # then get the annotations
-    anns=get_next_annotation_chunk(right_tier,0,.2) # get 200 ms of annotations
-    #process_annotations(anns)
-    
-    aud_nump=get_numpy_from_file(audpath)
-#    assess_numpy(aud_nump)
-#    aud_seg=get_xms(aud_nump,100)
-#    assess_numpy(aud_nump,right_tier)
-    
-#    X,y=form_learning_array(right_tier,aud_nump)
-    X,y=get_training_data(aud_nump,right_tier)
-    X=extract_features(X)   
-    machine_learn(X,y)
-    
-    
-def get_all_tiers(tgpath,letter):
-    tiers=[]
-    # returns an array of TextGrid objects
-    for dirs,subdirs,fnames in (os.walk(tgpath)):
-        for f in fnames:
-            if f.startswith("._"):
-                pass
-            elif f.endswith(".TextGrid"):
-                # turn it into an actual textgrid object
-                tg=get_textgrid(tgpath+f)
-                tiers.append(tg.get_tier_by_name("Speech (%s)"%(letter.upper()))
-    return tiers
-    
-    
-
+    fpath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio"
+    tgpath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio/TextGrids"
+    tasks=['naming','story']
+    amdirs=['American_2','American_3','American_4']
+    speakers=['A','B','C','D']
+    a_data=[]
+    b_data=[]
+    c_data=[]
+    d_data=[]
+    audio_data=[a_data,b_data,c_data,d_data]
+    for fname in os.listdir(tgpath):
+        if fname.startswith("._")==False and fname.endswith(".TextGrid"):
+            #print "Found file %s"%fname
+            # proceed
+            # find the number and the task
+            num=re.search("_([0-9])_",fname)
+            if num!=None:
+                num=num.group(1)
+                print "num: %s"%num
+                task=re.search("(Naming|Story)",fname,re.IGNORECASE)
+                if task!=None:
+                    task=task.group(1)
+                    # in the future this can be a for loop but it doesn't have to be right now
+                    #print tgpath+"/"+fname 
+                    #print "??"
+#                    tgrid=get_textgrid(tgpath+fname)
+                    letter='A'
+                    for d in amdirs:
+                        for f in os.listdir(fpath+"/%s"%d):
+    #                        print f
+                            tskmatch=re.search(task,f)
+                            if tskmatch!=None:
+                                # find the right number
+                                nummatch=re.search("_%s_"%num,f)
+                                if nummatch!=None:
+                                    
+                                    lmatch=re.search("_%s_"%letter,f)
+                                    if lmatch!=None:
+                                        print "triumph: the match for %s is %s. letter: %s"%(fname,f,letter)
+                                        # NOW get the appropriate text grid tier
+                                        # GREAT I hate everything. so we can now get the appropriate tier from the text grid
+                                        tgrd=get_textgrid(tgpath+"/%s"%fname)
+                                        right_tier=get_individual_tier(tgrd,"Speech (%s)"%letter)
+                                        aud=get_numpy_from_file("%s/%s/%s"%(fpath,d,f))
+                                        
 def form_learning_array(tiers,audio_array):
     X=[] # new array of input
     y=[] # the output
@@ -127,6 +137,7 @@ def machine_learn(X,y):
    # print "X: %s"%str(X[-1])
     print "y: %s"%str(y[-1])
     print oc
+    
 def get_xms(audio,dur):
     if dur%10!=0:
         print "The duration must be a multiple of 10 ms"
@@ -144,7 +155,6 @@ def get_next_annotation_chunk(tier,start_pos,end_pos):
 def get_textgrid(pth):
     tgrid=tgt.io.read_textgrid(filename=pth,encoding="utf-8",include_empty_intervals=True)
     return tgrid
-    
 
 def process_annotations(a): # where a is for the annotations
     # print "in process_annotations"
