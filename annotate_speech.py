@@ -8,7 +8,7 @@ from pympi import Elan,Praat
 
 class SoundDetector:
     def __init__(self):
-        self.THRESHOLD=.02 # adjust as necessary       
+        self.THRESHOLD=0.013 # adjust as necessary       
         
     def is_sound(self,amp):
         return amp>self.THRESHOLD
@@ -34,11 +34,12 @@ class ElanAnnotator:
             
             
     def create_annotation(self,tier,start,end,text):
-        self.eaf.add_annotation(tier, start, end, value=text)
+        self.eaf.add_annotation(tier, 1000*(start), 1000*(end), value=text)
         
     def write_annotation_file(self):
-        self.eaf.to_file("test_1.eaf")
-        
+        Elan.to_eaf("test_2.eaf",self.eaf)
+        tg=self.eaf.to_textgrid()
+        tg.to_file("test_2.TextGrid")
         
         
 class WavFileReader:
@@ -82,20 +83,21 @@ class WavFileReader:
                 self.silence=0
             else:
                 self.silence+=0.2
-                if self.silence>5:# 2 seconds roughly 
+                if self.silence>1:
                     self.sound_start=0 # reset 
                     # now that this is done, see if we should add to the elan file at all! whoooo
                     self.set_length(self.cont_sounds)
                     if self.get_length()>0:
                         self.cont_sounds=0
-                        print "tier: %s,start time: %f,end time: %f, annotation: %s"%("default_speech",self.current-self.most_recent,self.current,"speaking")
-                        #self.annotator.create_annotation("default_speech",self.current-self.most_recent,self.current,"speaking")
+                        #print "tier: %s,start time: %f,end time: %f, annotation: %s"%("default_speech",self.current-self.most_recent,self.current,"speaking")
+                        self.annotator.create_annotation("default_speech",self.current-self.most_recent,self.current,"speaking")
             self.current+=0.2 # move ahead a little ? ? ? ????? I HOPE?
             return d
-        except:
-            #print e
+        except IOError, e:
+            print e
             print "*** ERROR ***"
-            
+        except:
+            print "Error, idk what"
             
     def finish(self):
         self.annotator.write_annotation_file()
@@ -143,19 +145,7 @@ if __name__=="__main__":
     data=True
     while data:
         try:
-            wfr.read_stream()
+            data=wfr.read_stream()
         except:
             data=False
-            wfr.finish()
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
+    wfr.finish()
