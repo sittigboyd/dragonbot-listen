@@ -5,11 +5,15 @@ import wave
 import time
 
 class SoundDetector:
-    def __init__(self):
-        self.THRESHOLD=.5 # adjust as necessary       
+    def __init__(self,threshold=0.5):
+        self.THRESHOLD=threshold # adjust as necessary       
         
     def is_sound(self,amp):
         return amp>self.THRESHOLD
+        
+    def is_onset(self,sound):
+        onset=False
+        return onset
     
     def _identify_speech(self):
         return ""
@@ -34,7 +38,7 @@ class MicStream:
                                  rate=self.RATE,
                                  input=True,
                                  frames_per_buffer=self.INPUT_FRAMES_PER_BLOCK)
-        print "****** RECORDING ******"                         
+        print "****** STARTED PROCESSING ******"                         
         return strm
         
     def read_stream(self):
@@ -42,6 +46,7 @@ class MicStream:
         try:
             d=self.stream.read(self.INPUT_FRAMES_PER_BLOCK)
             d=struct.unpack(fmt,d)
+            # maybe is_onset goes somewhere here??
             if sd.is_sound(self.calc_rms(d)):
                 print "detected sound"
                 self.cont_sounds+=0.2
