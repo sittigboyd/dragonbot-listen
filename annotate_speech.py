@@ -1,5 +1,6 @@
 import pyaudio as pya
 import numpy 
+from scipy.stats.mstats import gmean
 import sys
 import struct
 import math
@@ -30,6 +31,7 @@ class SoundDetector:
         energy=self.calc_frame_energy(frame)
         f,sfm=self.apply_fft(frame)
         min_e=min(energy)
+        print "debug this more later but the problem is that the frame energy is a sum and idk how I'm supposed to get the minimum hashtag I'm Wrong"
         min_f=min(f)
         min_sf=min(sfm)
         
@@ -45,28 +47,28 @@ class SoundDetector:
             return True
         return False
 
-    def apply_fft(frame):
+    def apply_fft(self,frame):
         "Returns both the frequency and sfm"
         frame=numpy.array(frame)
-        w=fft.fft(frame)
-        freqs_and_geeks=fft.fftfreq(len(w))
+        w=numpy.fft.fft(frame)
+        freqs_and_geeks=numpy.fft.fftfreq(len(w))
         mad_max_freq=freqs_and_geeks.max()
         
         # Next step: return sfm(frame)
         # find the arithmetic mean of the speech spectrum, nbd
-        arith_mean=mean(frame)
+        arith_mean=numpy.mean(frame)
         geo_mean=gmean(frame)
         sfm=10*(geo_mean/arith_mean)
         return mad_max_freq,sfm
        
-    def calc_frame_energy(frame):
+    def calc_frame_energy(self,frame):
         energy=0
         for f in frame:
             energy+=f*f
+        
         return energy
             
-
-    def set_thresh(e,f,sf):
+    def set_thresh(self,e,f,sf):
         e=self.ENERGY_THRESHOLD*math.log(e)
         f=self.F_THRESHOLD
         sf=self.SF_THRESHOLD
@@ -130,35 +132,38 @@ class WavFileReader:
         print "****** RECORDING ******"                         
         return strm
         
-    def read_stream(self):
+    def detect_sounds(self):
+        speech_count=0
+        silence_count=0
         fmt="%dh"%self.INPUT_FRAMES_PER_BLOCK
         try:
             d=self.wf.readframes(self.INPUT_FRAMES_PER_BLOCK)
             d=struct.unpack(fmt,d)
-            if self.sd.is_sound(self.calc_rms(d)):
+            sound=self.sd.is_speech(d)
+            if sound:
+                self.cont_sounds+=0.01
                 if self.sound_start==0:
                     self.sound_start=self.current
-                self.cont_sounds+=0.01
-                self.silence=0
+                speech_count+=1
+                if speech_count>5:
+                    silence_count=0
             else:
-                self.silence+=0.01
-                if self.silence>1:
-                    self.sound_start=0 # reset 
-                    # now that this is done, see if we should add to the elan file at all! whoooo
-                    self.set_length(self.cont_sounds)
-                    if self.get_length()>0:
-                        self.cont_sounds=0
-                        #print "tier: %s,start time: %f,end time: %f, annotation: %s"%("default_speech",self.current-self.most_recent,self.current,"speaking")
-                        self.annotator.create_annotation("default_speech",self.current-self.most_recent,self.current,"speaking")
-            self.current+=0.01 # move ahead a little ? ? ? ????? I HOPE?
-            return d
+                silence_count+=1
+                if silence_count>10:
+                    speech_count=0
+                    self.cont_sounds=0
+                    # check to see if there's any speech we need to write to the file:
+                    if speech_count>5:
+                        self.annotator.create_annotation("default_speech",(self.current-0.1)-self.cont_sounds,(self.current-0.1),"speaking")
+            self.current+=0.01
+            return True
         except IOError, e:
             print e
             print "*** ERROR ***"
         except:
             print "Error, idk what"
     
-    def detect_sounds(self):
+    def read_stream(self):
         
         fmt="%dh"%self.INPUT_FRAMES_PER_BLOCK
         try:
@@ -171,7 +176,7 @@ class WavFileReader:
                     self.sound_start=self.current
             else:
                 self.silence+=0.01
-                if self.silence>1: # 10 consecutive frames of silence
+                if self.silence>1: # 1 second of silence
                     self.sound_start=0 # reset 
                     # now that this is done, see if we should add to the elan file at all! whoooo
                     self.set_length(self.cont_sounds)
@@ -234,8 +239,9 @@ if __name__=="__main__":
     wfr=WavFileReader(filepath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio/American_2/American_2_A_3NamingTask.wav")
     data=True
     while data:
+        print "one time through"
         try:
-            data=wfr.read_stream()
+            data=wfr.detect_sounds()
         except:
             data=False
-# RECOMMENT     wfr.finish()
+    wfr.finish()
