@@ -138,6 +138,13 @@ class SoundDetector:
                     silence_frames=0
                     self.cont_sounds+=0.01
                     sound_frames+=1
+                    # Then, check to see how many sound frames there have been. if there are more than five, sound
+                    # is occurring, so we'll set this so that the silence threshold is higher
+                    if sound_frames>5:
+                        # sound has definitely started
+                        silence_threshold=50 # a reasonable half a second of silence
+                    else:
+                        silence_threshold=10 # .1 seconds of silence
                     if self.sound_start==0:
                         self.sound_start=self.current
                 else:
@@ -148,7 +155,11 @@ class SoundDetector:
                             total_sounds+=1
                             #print "we got %f seconds in a row dingle dangle"%(1000*self.cont_sounds)
                             #print "We've got sound, ladies and gents! it lasts from %f to %f"%((self.current-0.1-self.cont_sounds),(self.current-0.1))
-                            self.annotator.create_annotation("default_speech",(self.current-0.2)-self.cont_sounds,(self.current-0.2),"speaking")
+                            start=self.current-(silence_threshold*0.01)-self.cont_sounds
+                            end=self.current-(silence_threshold*0.01)
+                            ann_text="speaking"
+                            self.annotator.create_annotation("default_speech",start,end,ann_text)
+                            #self.annotator.create_annotation("default_speech",(self.current-0.2)-self.cont_sounds,(self.current-0.2),"speaking")
                         sound_frames=0
                         self.cont_sounds=0
                         sound_frames=0
