@@ -64,12 +64,6 @@ class SoundDetector:
         idx=numpy.argmax(numpy.abs(w))
         freq=freqs_and_geeks[idx]
         freq_hz=abs(freq)*44100
-        #        mad_max_freq=freqs_and_geeks.max()
-#        mad_max_freq=freqs_and_geeks.max()
-        #print "max frequency: %f"%freq_hz
-        
-        # Next step: return sfm(frame)
-        # find the arithmetic mean of the speech spectrum, nbd
         arith_mean=numpy.mean(frame)
         geo_mean=gmean(frame)
         try:
@@ -148,13 +142,13 @@ class SoundDetector:
                         self.sound_start=self.current
                 else:
                     silence_frames+=1
-                    if silence_frames>15:
+                    if silence_frames>20:
                         # check to see if there's any speech we need to write to the file:
-                        if sound_frames>50:
+                        if sound_frames>30:
                             total_sounds+=1
                             #print "we got %f seconds in a row dingle dangle"%(1000*self.cont_sounds)
                             #print "We've got sound, ladies and gents! it lasts from %f to %f"%((self.current-0.1-self.cont_sounds),(self.current-0.1))
-                            self.annotator.create_annotation("default_speech",(self.current-0.1)-self.cont_sounds,(self.current-0.1),"speaking")
+                            self.annotator.create_annotation("default_speech",(self.current-0.2)-self.cont_sounds,(self.current-0.2),"speaking")
                         sound_frames=0
                         self.cont_sounds=0
                         sound_frames=0
@@ -280,9 +274,9 @@ class ElanAnnotator:
         self.total+=1
         
     def write_annotation_file(self):
-        Elan.to_eaf("jul12fixedfreq.eaf",self.eaf)
+        Elan.to_eaf("jul14fixedfreq_1.eaf",self.eaf)
         tg=self.eaf.to_textgrid()
-        tg.to_file("jul12fixedfreq.TextGrid")   
+        tg.to_file("jul14fixedfreq_1.TextGrid")   
         print "in write_annotation_file: there were %d total annotations added."%self.total
         
     
