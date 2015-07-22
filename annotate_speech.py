@@ -7,10 +7,11 @@ import math
 import wave
 import time
 from pympi import Elan,Praat
+import os
 
 class SoundDetector:
-    def __init__(self):
-        self.RMS_THRESHOLD=0.013 # adjust as necessary       
+    def __init__(self,filename):
+        #self.RMS_THRESHOLD=0.013 # adjust as necessary       
         self.ENERGY_THRESHOLD=35 # drawn from M. H. Moattar and M. M. Homayounpour 2009
         self.F_THRESHOLD=185 # also drawn from above, in Hz      
         self.SF_THRESHOLD=5 # drawn from Moattar and Homayounpour
@@ -18,7 +19,7 @@ class SoundDetector:
         self.e_min=40 # ridiculously high number for more accurate thresholding
         self.f_min=185
         self.sfm_min=5
-        self.rms_min=110 # I BELIEVE, adjust as necessary
+        self.rms_min=400 # I BELIEVE, adjust as necessary
         
         self.most_recent=0 # the duration of the most recent speaking sound
         self.cont_sounds=0 # no continuous sounds so far
@@ -32,10 +33,11 @@ class SoundDetector:
         self.FORMAT = pya.paInt16 
         self.INPUT_BLOCK_TIME=0.01 # 20 ms chunks?
         self.INPUT_FRAMES_PER_BLOCK=int(self.RATE*self.INPUT_BLOCK_TIME)
+        self.wf=wave.open(filename,'rb')
+        
         print "there are %d frames per block"%self.INPUT_FRAMES_PER_BLOCK
-        self.annotator=ElanAnnotator()
-        self.wf=None
-        self.stream=self.start_stream(self.read_from_file())   
+        self.annotator=ElanAnnotator(filename=filename)
+        self.stream=self.start_stream(self.wf)   
         
     def is_sound(self,amp):
         return amp>self.RMS_THRESHOLD
@@ -87,19 +89,36 @@ class SoundDetector:
         #f=self.F_THRESHOLD
         sf=self.SF_THRESHOLD
         return e,f,sf        
-         
+    
+    def start_new_files(self,filename):
+        self.e_min=40 # ridiculously high number for more accurate thresholding
+        self.f_min=185
+        self.sfm_min=5
+        self.rms_min=200 # I BELIEVE, adjust as necessary
+        
+        self.most_recent=0 # the duration of the most recent speaking sound
+        self.cont_sounds=0 # no continuous sounds so far
+        self.silence=0 # start from 0 everywhere
+        self.current=0 # keeps track of the current time. still gotta figure this out. 
+        self.sound_start=0
+        self.wf=wave.open(filename,'rb')
+        efile=filename.split("/")[-1]
+        efile=efile.split(".")[0]
+        self.annotator=ElanAnnotator(filename=efile)
+    
     def start_stream(self,wf):
         strm=self.pa.open(format=self.pa.get_format_from_width(wf.getsampwidth()),
                         channels=wf.getnchannels(),
                         rate=wf.getframerate(),
                         input=True)
-        self.wf=wf
         print "****** RECORDING ******"                         
         return strm
         
     def detect_sounds(self):
         sound_frames=0
         silence_frames=0
+        # uncomment later just testing silence_threshold=30
+        silence_threshold=10
         fmt="%dh"%self.INPUT_FRAMES_PER_BLOCK
         still_reading=True
         total_sounds=0
@@ -116,8 +135,8 @@ class SoundDetector:
                 te,tf,tsfm=self.set_thresh(self.e_min,self.f_min,self.sfm_min)
                 if frames<30:
                     self.e_min=((silence_frames*self.e_min)+e)/(silence_frames+1)
-                    if f<self.f_min and f!=0:
-                        self.f_min=f
+                    #if f<self.f_min and f!=0:
+                        #self.f_min=f
                     if sfm<self.sfm_min:
                         self.sfm_min=sfm
                 if e-self.e_min>=te:
@@ -130,7 +149,6 @@ class SoundDetector:
                     #print "frequency met"
                     counter+=1
                 if rms>self.rms_min:
-                    #counter+=1
                     if counter>1:
                         sound=True
 #                print "counter: %d"%counter
@@ -140,18 +158,18 @@ class SoundDetector:
                     sound_frames+=1
                     # Then, check to see how many sound frames there have been. if there are more than five, sound
                     # is occurring, so we'll set this so that the silence threshold is higher
-                    if sound_frames>5:
+                    #if sound_frames>15:
                         # sound has definitely started
-                        silence_threshold=50 # a reasonable half a second of silence
-                    else:
-                        silence_threshold=10 # .1 seconds of silence
+                        #silence_threshold=50 # a reasonable half a second of silence
+                    #else:
+                        #silence_threshold=10 # .1 seconds of silence
                     if self.sound_start==0:
                         self.sound_start=self.current
                 else:
                     silence_frames+=1
-                    if silence_frames>20:
+                    if silence_frames>silence_threshold:
                         # check to see if there's any speech we need to write to the file:
-                        if sound_frames>30:
+                        if sound_frames>10: # WAS 30 change back for original comparison
                             total_sounds+=1
                             #print "we got %f seconds in a row dingle dangle"%(1000*self.cont_sounds)
                             #print "We've got sound, ladies and gents! it lasts from %f to %f"%((self.current-0.1-self.cont_sounds),(self.current-0.1))
@@ -210,6 +228,8 @@ class SoundDetector:
     
     def finish(self):
         self.annotator.write_annotation_file()
+        self.wf.close()
+        #self.pa.terminate()
   
     def set_length(self, dur):
         self.most_recent=dur
@@ -242,31 +262,18 @@ class SoundDetector:
         self.stream.close()
         self.pa.terminate()
         print "*** STREAM CLOSED ***"
-        
-    def _identify_pitch(self,data):
-        # this will do something cool in the future
-        return None
-        
-    def calc_rms(self,block):
-        """
-        This is the old version, back when I was working with Arrays instead hahaha
-        rms=0
-        n=len(block)
-        for b in block:
-            b = b / (2.**15)
-            square=b*b
-            rms+=square
-        rms=math.sqrt(rms/n)
-        """ 
-        return None
     
-    def read_from_file(self):
-        w = wave.open(sys.argv[1], 'rb')
+    def read_from_file(self,fn):
+        w = wave.open(fn, 'rb')
         return w   
             
 class ElanAnnotator:
-    def __init__(self,tier_names=["default_speech"]):
+    def __init__(self,tier_names=["default_speech"],filename=None):
         self.total=0
+        if contains(filename,"/"):
+            filename=filename.split("/")[-1]
+            filename=filename.split(".")[0]
+        self.efile=filename
         try:
             self.eaf=Elan.Eaf(author="A Group of Americans")
             for tier in tier_names:
@@ -285,12 +292,90 @@ class ElanAnnotator:
         self.total+=1
         
     def write_annotation_file(self):
-        Elan.to_eaf("jul14fixedfreq_1.eaf",self.eaf)
+        Elan.to_eaf("annotations_higher_rms/%s.eaf"%(self.efile),self.eaf)
         tg=self.eaf.to_textgrid()
-        tg.to_file("jul14fixedfreq_1.TextGrid")   
+        tg.to_file("annotations_higher_rms/%s.TextGrid"%(self.efile))   
         print "in write_annotation_file: there were %d total annotations added."%self.total
         
+def contains(string,char):
+    for s in string:
+        if s==char:
+            return True
+    
+def annotate_american_data():
+#    filepath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio/American_4/American_4_A_3NamingTask.wav"
+#    sound_detect=SoundDetector(filepath)
+#    sound_detect.detect_sounds()
+#    filepath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio/American_4/American_4_A_4StoryTask.wav"
+#    sound_detect.start_new_files(filepath)
+#    sound_detect.detect_sounds()
+    audiopath="/home/ksb/Documents/dreu/analysis/python_scripts/american_audio"
+    dirs=['American_2','American_3','American_4']
+    files=[
+        ['American_2_A_4StoryTask.wav','American_2_B_4StoryTask.wav','American_2_C_4StoryTask.wav','American_2_D_4StoryTask.wav','American_2_A_3NamingTask.wav','American_2_B_3NamingTask.wav','American_2_C_3NamingTask.wav','American_2_D_3NamingTask.wav'],\
+        ['American_3_A_4StoryTask.wav','American_3_B_4StoryTask.wav','American_3_C_4StoryTask.wav','American_3_D_4StoryTask.wav','American_3_A_3NamingTask.wav','American_3_B_3NamingTask.wav','American_3_C_3NamingTask.wav','American_3_D_3NamingTask.wav'],\
+        ['American_4_A_4StoryTask.wav','American_4_B_4StoryTask.wav','American_4_C_4StoryTask.wav','American_4_D_4StoryTask.wav','American_4_A_3NamingTask.wav','American_4_B_3NamingTask.wav','American_4_C_3NamingTask.wav','American_4_D_3NamingTask.wav'],\
+        ]
+    not_created=True
+    for idx in range(len(dirs)):
+        direc=dirs[idx]
+        for filename in files[idx]:
+            filepath="%s/%s/%s"%(audiopath,direc,filename)
+            print "annotating %s"%filepath
+            if not_created:
+                sound_detect=SoundDetector(filepath)
+                not_created=False
+            sound_detect.start_new_files(filepath)
+            sound_detect.detect_sounds()
+    sound_detect.end_stream()
+        
+def annotate_mexican_data():
+    audiopath="/home/ksb/Documents/dreu/analysis/utep_ict_audio" 
+    dirs=['Mexican_1','Mexican_2']
+    files=[
+          ['Mexican_1_A_4Story.wav','Mexican_1_B_4Story.wav','Mexican_1_C_4Story.wav','Mexican_1_D_4Story.wav','Mexican_1_A_3Naming.wav','Mexican_1_B_3Naming.wav','Mexican_1_C_3Naming.wav','Mexican_1_D_3Naming.wav'],\
+          ['Mexican_2_A_4StoryTask.wav','Mexican_2_B_4StoryTask.wav','Mexican_2_C_4StoryTask.wav','Mexican_2_D_4StoryTask.wav','Mexican_2_A_3NamingTask.wav','Mexican_2_B_3NamingTask.wav','Mexican_2_C_3NamingTask.wav','Mexican_2_D_3NamingTask.wav'],\
+        ]
+    not_created=True
+    for idx in range(len(dirs)):
+        direc=dirs[idx]
+        for filename in files[idx]:
+            filepath="%s/%s/%s"%(audiopath,direc,filename)
+            print "annotating %s"%filepath
+            if not_created:
+                sound_detect=SoundDetector(filepath)
+                not_created=False
+            sound_detect.start_new_files(filepath)
+            sound_detect.detect_sounds()
+    sound_detect.end_stream()
+    
+    
+def annotate_arabic_data():
+    audiopath="/home/ksb/Documents/dreu/analysis/utep_ict_audio" 
+    dirs=['Arabic_1','Arabic_4']
+    files=[
+          ['Arabic_1_A_4Story.wav','Arabic_1_B_4Story.wav','Arabic_1_C_4Story.wav','Arabic_1_D_4Story.wav','Arabic_1_A_3Naming.wav','Arabic_1_B_3Naming.wav','Arabic_1_C_3Naming.wav','Arabic_1_D_3Naming.wav'],\
+          ['Arabic_4_A_4Story.wav','Arabic_4_B_4Story.wav','Arabic_4_C_4Story.wav','Arabic_4_D_4Story.wav','Arabic_4_A_3Naming.wav','Arabic_4_B_3Naming.wav','Arabic_4_C_3Naming.wav','Arabic_4_D_3Naming.wav']
+        ]
+    not_created=True
+    for idx in range(len(dirs)):
+        direc=dirs[idx]
+        for filename in files[idx]:
+            filepath="%s/%s/%s"%(audiopath,direc,filename)
+            print "annotating %s"%filepath
+            if not_created:
+                sound_detect=SoundDetector(filepath)
+                not_created=False
+            sound_detect.start_new_files(filepath)
+            sound_detect.detect_sounds()
+    sound_detect.end_stream()
+    
     
 if __name__=="__main__":
-    sound_detect=SoundDetector()
-    sound_detect.detect_sounds()
+    print "**** Gonna analyze some 'mericans ****"
+    print "**** About to annotate the Mexican speech data ****"
+    annotate_mexican_data()
+    print "**** Finished with Mexican speech data, about to annotate Arabic speech data ****"
+    annotate_arabic_data()
+    print "**** Finished with everything!! ****"
+    
